@@ -2,13 +2,52 @@ import torch
 import pickle
 import utils
 from nltk.tokenize.treebank import TreebankWordDetokenizer
+import argparse
+import os
+import multiprocessing
 
 try:
     from tqdm import tqdm
 except ImportError:
     def tqdm(iterable):
         return iterable
-    
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-load', dest='load', type=str)
+parser.add_argument('-ngram', dest='ngram', type=int)
+parser.add_argument('-npool', dest='npool', type=int)
+parser.add_argument('-kbeam', dest='kbeam', type=int)
+parser.add_argument('-outdir', dest='outdir', type=str)
+parser.add_argument('-test_notone', dest='test_notone', type=str)
+parser.add_argument('-test_tone', dest='test_tone', type=str)
+args = parser.parse_args()
+
+lm = None
+with open(args.load, 'rb') as f:
+    lm = pickle.load(f)
+
+detokenize = TreebankWordDetokenizer().detokenize
+
+# greedy search
+def greedy_search(words, model):
+    sequences = []
+    for idx, word in enumerate(words):
+        if idx == 0:
+            sequences = [([x], 0.0) for x in utils.get_all_tones(word)]
+        else:
+            all_sequences = []
+            for seq in sequences:
+                for next_word in utils.get_all_tones(word):
+                    current_word = seq[0][-1]
+                    score = model.logscore(next_word, [current_word])
+                    new_seq = seq[0].copy()
+                    new_seq.append(next_word)
+                    all_sequences.append((new_seq, seq[1] + score))
+            # sort and keep only the top-scoring sequence
+            all_sequences = sorted(all_sequences, key=lambda x: x[1], reverse=True)
+            sequences = [all_sequences[0]]
+    return sequences[0] 
+
 # beam search
 def beam_search(words, model, k=3):
     sequences = []
@@ -24,61 +63,79 @@ def beam_search(words, model, k=3):
                     new_seq = seq[0].copy()
                     new_seq.append(next_word)
                     all_sequences.append((new_seq, seq[1] + score))
+            # sort and keep only the top-k sequence
             all_sequences = sorted(all_sequences,key=lambda x: x[1], reverse=True)
             sequences = all_sequences[:k]
     return sequences
 
-def restore(sentence, lm, detokenize, k=5):
+def restore_beam(sentence, lm, k=5):
     sentence = sentence.replace('\n', '')
     result = beam_search(sentence.lower().split(), lm, k)
     return detokenize(result[0][0])
 
+def restore_greedy(sentence, lm):
+    sentence = sentence.replace('\n', '')
+    result = greedy_search(sentence.lower().split(), lm)
+    return detokenize(result[0])
+
+def restore_greedy_pool(words):
+    return restore_greedy(words, lm)
+
+def restore_beam_pool(words):
+    kbeam = args.kbeam
+    return restore_beam(words, lm, kbeam)
+
 if __name__=='__main__':
-    with open('data/test.notone', 'r', encoding='utf-8') as f:
-        test_data = f.readlines()
-    
-    with open('data/test.tone', 'r', encoding='utf-8') as f:
-        test_data_tone = f.readlines()
+    if args.load and args.ngram and args.npool:
+        ngram = args.ngram
+        npool = args.npool
+        lm = None
+        kbeam = 0
 
-    detokenize = TreebankWordDetokenizer().detokenize
+        if args.test_notone and args.test_tone:
+            
+            with open(args.test_notone, 'r', encoding='utf-8') as f:
+                test_data = f.readlines()
+            
+            with open(args.test_tone, 'r', encoding='utf-8') as f:
+                test_data_tone = f.readlines()
 
-    # load 2gram model
-    print('loading 2-gram model....')
-    with open('out/trained_models/2gram-model.pkl', 'rb') as f:
-        lm2 = pickle.load(f)
+            '''if not args.kbeam:
+                print(f'testing {args.ngram}-gram model with greedy search....')
+                with multiprocessing.Pool(npool) as p:
+                    results = list(tqdm(p.imap(restore_greedy_pool, test_data), total=len(test_data))) 
 
-    print('testing 2-gram model....')
+                total = 0
+                total_correct = 0
+                for idx, sentence in enumerate(results):
+                    correct, n = utils.evaluate(sentence, test_data_tone[idx])
+                    total += n
+                    total_correct += correct
+                print(f'test_acc={total_correct/total}')
 
-    for k in range(1, 10):
-        print(f'k={k}')
-        total = 0
-        total_correct = 0
-        for idx in tqdm(range(len(test_data))):
-            result = restore(test_data[idx], lm2, detokenize, k)
-            correct, n = utils.evaluate(result, test_data_tone[idx])
-            total += n
-            total_correct += correct
-        print(f'test_acc={total_correct/total:.2f}')
+                if args.outdir:
+                    out_file = os.path.join(args.outdir, f'{ngram}gram-greedy.out.txt')
+                    with open(out_file, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(results))'''
 
-    # load 3gram model
-    print('loading 3-gram model....')
-    with open('out/trained_models/3gram-model.pkl', 'rb') as f:
-        lm3 = pickle.load(f)
+            if args.kbeam:
+                print(f'testing {args.ngram}-gram model with beam search....') 
+                print(f'k={args.kbeam}')
 
-    print('testing 3-gram model....')
-    for k in range(1, 10):
-        print(f'k={k}')
-        total = 0
-        total_correct = 0
-        for idx in tqdm(range(len(test_data))):
-            result = restore(test_data[idx], lm3, detokenize, k)
-            correct, n = utils.evaluate(result, test_data_tone[idx])
-            total += n
-            total_correct += correct
-        print(f'test_acc={total_correct/total:.2f}')
+                with multiprocessing.Pool(npool) as p:
+                    results = list(tqdm(p.imap(restore_beam_pool, test_data), total=len(test_data)))
 
-    '''test_sentence = input("input: ")
-    print(f'2-gram result: {restore(test_sentence, lm2, detokenize)}')
-    print(f'3-gram result: {restore(test_sentence, lm3, detokenize)}')'''
+                total = 0
+                total_correct = 0
+            
+                for idx, sentence in enumerate(results):
+                    correct, n = utils.evaluate(sentence, test_data_tone[idx])
+                    total += n
+                    total_correct += correct
+                    
+                print(f'test_acc={total_correct/total}')
 
-    
+                if args.outdir:
+                    out_file = os.path.join(args.outdir, f'{ngram}gram-beam-{args.kbeam}.out.txt')
+                    with open(out_file, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(results))

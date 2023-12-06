@@ -3,6 +3,8 @@ from nltk.lm.preprocessing import padded_everygram_pipeline
 from nltk.lm import KneserNeyInterpolated
 import pickle
 import utils
+import argparse
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -10,30 +12,28 @@ except ImportError:
         return iterable
 
 if __name__=='__main__':
-    with open('data/train.tone', 'r', encoding='utf-8') as f:
-        train_data = f.readlines()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-train', dest='train', type=str)
+    parser.add_argument('-save', dest='save', type=str)
+    parser.add_argument('-ngram', dest='ngram', type=int)
+    args = parser.parse_args()
 
-    corpus = utils.tokenize(train_data)
+    if args.train:
+        with open(args.train, 'r', encoding='utf-8') as f:
+            train_data = f.readlines()
 
-    ngram = 2
-    lm2 = KneserNeyInterpolated(ngram)
-    train_data, padded_data = padded_everygram_pipeline(ngram, corpus)
+        corpus = utils.tokenize(train_data)
 
-    print('training 2-gram....')
-    lm2.fit(train_data, padded_data)
+        ngram = args.ngram
+        lm = KneserNeyInterpolated(ngram)
+        train_data, padded_data = padded_everygram_pipeline(ngram, corpus)
 
-    print('saving 2-gram model....')
-    with open('out/trained_models/2gram-model.pkl', 'wb') as f:
-        pickle.dump(lm2, f)
+        print(f'training {ngram}-gram....')
+        lm.fit(train_data, padded_data)
 
-    ngram = 3
-    lm3 = KneserNeyInterpolated(ngram)
-    train_data, padded_data = padded_everygram_pipeline(ngram, corpus)
+        if args.save:
+            print(f'saving {ngram}-gram model....')
+            with open(args.save, 'wb') as f:
+                pickle.dump(lm, f)
 
-    print('training 3-gram....')
-    lm3.fit(train_data, padded_data)
-
-    print('saving 3-gram model....')
-    with open('out/trained_models/3gram-model.pkl', 'wb') as f:
-        pickle.dump(lm3, f)
 
