@@ -2,6 +2,8 @@ import re
 import torch
 from nltk.tokenize import word_tokenize
 import numpy as np
+import dataloader
+import torch.utils
 
 try:
     from tqdm import tqdm
@@ -35,6 +37,16 @@ def get_vn_dict():
         else:
             vn_dict[no_tone].append(word)
     return vn_dict
+
+def create_dataset(src_file, trg_file):
+    tokenizer = torch.load('tokenizer_standarized.h5')
+    src_tokenizer = tokenizer['notone']
+    trg_tokenizer = tokenizer['tone']
+
+    dataset = dataloader.Dataset(src_tokenizer, trg_tokenizer, src_file, trg_file)
+
+    return dataset
+
 
 # extract words and numbers in sentences
 def extract_words(sentence):
