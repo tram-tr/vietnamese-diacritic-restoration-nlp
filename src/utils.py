@@ -13,7 +13,7 @@ except ImportError:
     
 def tokenize(data):
     print('tokenizing...')
-    m = torch.load('tokenizer_standarized.h5')
+    m = torch.load('src/tokenizer_standarized.h5')
     vnword = m['tone'].word_index
     corpus = []
     for line in tqdm(data):
@@ -27,7 +27,7 @@ def tokenize(data):
 
 # get vietnamese dictionary
 def get_vn_dict():
-    tokenizer = torch.load('tokenizer_standarized.h5')
+    tokenizer = torch.load('src/tokenizer_standarized.h5')
     words = list(tokenizer['tone'].word_index.keys())
     vn_dict = {}
     for word in words:
@@ -39,7 +39,7 @@ def get_vn_dict():
     return vn_dict
 
 def create_dataset(src_file, trg_file):
-    tokenizer = torch.load('tokenizer_standarized.h5')
+    tokenizer = torch.load('src/tokenizer_standarized.h5')
     src_tokenizer = tokenizer['notone']
     trg_tokenizer = tokenizer['tone']
 
